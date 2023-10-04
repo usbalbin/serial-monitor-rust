@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::io::{BufRead, BufReader};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, RwLock};
@@ -86,12 +87,14 @@ fn serial_read(
     port: &mut BufReader<Box<dyn SerialPort>>,
     serial_buf: &mut String,
 ) -> Result<usize, std::io::Error> {
+    //port.read_until(terminator, serial_buf);
     port.read_line(serial_buf)
 }
 
-pub fn serial_thread(
+pub fn serial_thread<R: Reader>(
+    mut reader: R,
     send_rx: Receiver<String>,
-    raw_data_tx: Sender<Packet>,
+    raw_data_tx: Sender<Packet<R::Buffer>>,
     device_lock: Arc<RwLock<Device>>,
     devices_lock: Arc<RwLock<Vec<String>>>,
     print_lock: Arc<RwLock<Vec<Print>>>,
@@ -163,7 +166,7 @@ pub fn serial_thread(
             }
 
             perform_writes(&mut port, &send_rx, &raw_data_tx, t_zero);
-            perform_reads(&mut port, &raw_data_tx, t_zero);
+            reader.perform_reads(&mut port, &raw_data_tx, t_zero);
 
             //std::thread::sleep(Duration::from_millis(10));
         }
@@ -227,10 +230,10 @@ fn disconnected(
     None
 }
 
-fn perform_writes(
+fn perform_writes<P: From<String>>(
     port: &mut BufReader<Box<dyn SerialPort>>,
     send_rx: &Receiver<String>,
-    raw_data_tx: &Sender<Packet>,
+    raw_data_tx: &Sender<Packet<P>>,
     t_zero: Instant,
 ) {
     if let Ok(cmd) = send_rx.recv_timeout(Duration::from_millis(1)) {
@@ -243,7 +246,7 @@ fn perform_writes(
             relative_time: Instant::now().duration_since(t_zero).as_millis(),
             absolute_time: get_epoch_ms(),
             direction: SerialDirection::Send,
-            payload: cmd,
+            payload: P::from(cmd),
         };
         raw_data_tx
             .send(packet)
@@ -251,29 +254,46 @@ fn perform_writes(
     }
 }
 
-fn perform_reads(
-    port: &mut BufReader<Box<dyn SerialPort>>,
-    raw_data_tx: &Sender<Packet>,
-    t_zero: Instant,
-) {
-    let mut buf = "".to_string();
-    match serial_read(port, &mut buf) {
-        Ok(_) => {
-            let delimiter = if buf.contains("\r\n") { "\r\n" } else { "\0\0" };
-            buf.split_terminator(delimiter).for_each(|s| {
-                let packet = Packet {
-                    relative_time: Instant::now().duration_since(t_zero).as_millis(),
-                    absolute_time: get_epoch_ms(),
-                    direction: SerialDirection::Receive,
-                    payload: s.to_owned(),
-                };
-                raw_data_tx.send(packet).expect("failed to send raw data");
-            });
-        }
-        // Timeout is ok, just means there is no data to read
-        Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
-        Err(e) => {
-            println!("Error reading: {:?}", e);
+pub trait Reader: Send {
+    type Buffer: Default + From<String> + Send + Sync + Clone + Display;
+    fn perform_reads(
+        &mut self,
+        port: &mut BufReader<Box<dyn SerialPort>>,
+        raw_data_tx: &Sender<Packet<Self::Buffer>>,
+        t_zero: Instant,
+    );
+}
+
+pub struct DefaultReader;
+
+impl Reader for DefaultReader {
+    type Buffer = String;
+
+    fn perform_reads(
+        &mut self,
+        port: &mut BufReader<Box<dyn SerialPort>>,
+        raw_data_tx: &Sender<Packet<Self::Buffer>>,
+        t_zero: Instant,
+    ) {
+        let mut buf = "".to_string();
+        match serial_read(port, &mut buf) {
+            Ok(_) => {
+                let delimiter = if buf.contains("\r\n") { "\r\n" } else { "\0\0" };
+                buf.split_terminator(delimiter).for_each(|s| {
+                    let packet = Packet {
+                        relative_time: Instant::now().duration_since(t_zero).as_millis(),
+                        absolute_time: get_epoch_ms(),
+                        direction: SerialDirection::Receive,
+                        payload: s.to_owned(),
+                    };
+                    raw_data_tx.send(packet).expect("failed to send raw data");
+                });
+            }
+            // Timeout is ok, just means there is no data to read
+            Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
+            Err(e) => {
+                println!("Error reading: {:?}", e);
+            }
         }
     }
 }

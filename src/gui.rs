@@ -1,4 +1,5 @@
 use core::f32;
+use std::fmt::Display;
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
@@ -166,7 +167,7 @@ pub fn load_gui_settings() -> GuiSettingsContainer {
     })
 }
 
-pub struct MyApp {
+pub struct MyApp<P> {
     connected_to_device: bool,
     command: String,
     device: String,
@@ -178,13 +179,13 @@ pub struct MyApp {
     console: Vec<Print>,
     picked_path: PathBuf,
     plot_location: egui::Rect,
-    data: DataContainer,
+    data: DataContainer<P>,
     gui_conf: GuiSettingsContainer,
     print_lock: Arc<RwLock<Vec<Print>>>,
     device_lock: Arc<RwLock<Device>>,
     devices_lock: Arc<RwLock<Vec<String>>>,
     connected_lock: Arc<RwLock<bool>>,
-    data_lock: Arc<RwLock<DataContainer>>,
+    data_lock: Arc<RwLock<DataContainer<P>>>,
     names_tx: Sender<Vec<String>>,
     save_tx: Sender<FileOptions>,
     send_tx: Sender<String>,
@@ -201,10 +202,10 @@ pub struct MyApp {
 }
 
 #[allow(clippy::too_many_arguments)]
-impl MyApp {
+impl<P: Default + Clone + Display> MyApp<P> {
     pub fn new(
         print_lock: Arc<RwLock<Vec<Print>>>,
-        data_lock: Arc<RwLock<DataContainer>>,
+        data_lock: Arc<RwLock<DataContainer<P>>>,
         device_lock: Arc<RwLock<Device>>,
         devices_lock: Arc<RwLock<Vec<String>>>,
         devices: SerialDevices,
@@ -282,13 +283,13 @@ impl MyApp {
         window_feedback
     }
 
-    fn console_text(&self, packet: &crate::data::Packet) -> Option<String> {
+    fn console_text(&self, packet: &crate::data::Packet<P>) -> Option<String> where P: Display {
         match (self.show_sent_cmds, self.show_timestamps, &packet.direction) {
             (true, true, _) => Some(format!(
                 "[{}] t + {:.3}s: {}\n",
                 packet.direction,
                 packet.relative_time as f32 / 1000.0,
-                packet.payload
+                packet.payload.to_string()
             )),
             (true, false, _) => Some(format!("[{}]: {}\n", packet.direction, packet.payload)),
             (false, true, SerialDirection::Receive) => Some(format!(
@@ -296,7 +297,7 @@ impl MyApp {
                 packet.relative_time as f32 / 1000.0,
                 packet.payload
             )),
-            (false, false, SerialDirection::Receive) => Some(packet.payload.clone() + "\n"),
+            (false, false, SerialDirection::Receive) => Some(packet.payload.clone().to_string() + "\n"),
             (_, _, _) => None,
         }
     }
@@ -873,7 +874,7 @@ impl MyApp {
     }
 }
 
-impl eframe::App for MyApp {
+impl<P: Default + Display + Clone> eframe::App for MyApp<P> {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         if let Ok(read_guard) = self.connected_lock.read() {
             self.connected_to_device = *read_guard;

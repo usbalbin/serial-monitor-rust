@@ -24,35 +24,35 @@ pub fn get_epoch_ms() -> u128 {
 }
 
 #[derive(Clone, Debug)]
-pub struct Packet {
+pub struct Packet<P> {
     pub relative_time: u128,
     pub absolute_time: u128,
     pub direction: SerialDirection,
-    pub payload: String,
+    pub payload: P,
 }
 
-impl Default for Packet {
-    fn default() -> Packet {
+impl<P> Default for Packet<P> where P: Default {
+    fn default() -> Packet<P> {
         Packet {
             relative_time: 0,
             absolute_time: get_epoch_ms(),
             direction: SerialDirection::Send,
-            payload: "".to_string(),
+            payload: P::default(),
         }
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct DataContainer {
+pub struct DataContainer<P> {
     pub time: Vec<u128>,
     pub names: Vec<String>,
     pub absolute_time: Vec<u128>,
     pub dataset: Vec<Vec<f32>>,
-    pub raw_traffic: Vec<Packet>,
+    pub raw_traffic: Vec<Packet<P>>,
 }
 
-impl Default for DataContainer {
-    fn default() -> DataContainer {
+impl<P> Default for DataContainer<P> where P: Default {
+    fn default() -> DataContainer<P> {
         DataContainer {
             time: vec![],
             names: vec!["Column 0".to_string()],

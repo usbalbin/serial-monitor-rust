@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::fmt::Display;
 use std::path::PathBuf;
 
 use csv::WriterBuilder;
@@ -13,7 +14,7 @@ pub struct FileOptions {
     pub save_raw_traffic: bool,
 }
 
-pub fn save_to_csv(data: &DataContainer, csv_options: &FileOptions) -> Result<(), Box<dyn Error>> {
+pub fn save_to_csv<P: Clone + Display>(data: &DataContainer<P>, csv_options: &FileOptions) -> Result<(), Box<dyn Error>> {
     let mut wtr = WriterBuilder::new()
         .has_headers(false)
         .from_path(&csv_options.file_path)?;
@@ -50,7 +51,7 @@ pub fn save_to_csv(data: &DataContainer, csv_options: &FileOptions) -> Result<()
     Ok(())
 }
 
-pub fn save_raw(data: &DataContainer, path: &PathBuf) -> Result<(), Box<dyn Error>> {
+pub fn save_raw<P: Clone + Display>(data: &DataContainer<P>, path: &PathBuf) -> Result<(), Box<dyn Error>> {
     let mut wtr = WriterBuilder::new().has_headers(false).from_path(path)?;
     let header = vec![
         "Time [ms]".to_string(),
@@ -61,7 +62,7 @@ pub fn save_raw(data: &DataContainer, path: &PathBuf) -> Result<(), Box<dyn Erro
 
     for j in 0..data.dataset[0].len() {
         let mut data_to_write = vec![data.time[j].to_string(), data.absolute_time[j].to_string()];
-        data_to_write.push(data.raw_traffic[j].payload.clone());
+        data_to_write.push(data.raw_traffic[j].payload.clone().to_string());
         wtr.write_record(&data_to_write)?;
     }
     wtr.flush()?;
